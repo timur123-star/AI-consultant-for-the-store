@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Вопрос или обсуждение
+    url: https://github.com/timur123-star/AI-consultant-for-the-store/discussions
+    about: Для общих вопросов или обсуждений используй Discussions.

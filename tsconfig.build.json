@@ -1,0 +1,7 @@
+{
+  // Прод-сборка: те же опции, что в tsconfig.json, но без тестов.
+  // Используется в `npm run build` и в Dockerfile.
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["node_modules", "dist", "coverage", ".cache", "tests"]
+}

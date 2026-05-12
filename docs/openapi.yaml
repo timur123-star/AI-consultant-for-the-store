@@ -1,0 +1,373 @@
+openapi: 3.1.0
+info:
+  title: AI-consultant for the store — operational API
+  version: '1.8.0'
+  description: |
+    HTTP-эндпоинты вспомогательного сервиса бота. Сам Telegram-бот общается через
+    polling или webhook (см. README → BOT_MODE), а этот HTTP-сервер обслуживает
+    health-пробы, ready-проверки, метрики (Prometheus и JSON) и интерактивную
+    документацию (Swagger UI на `/docs`).
+
+    Все эндпоинты публичные — никаких токенов и заголовков не требуется.
+    Сервер слушает порт из `PORT` (по умолчанию `3000`).
+  contact:
+    name: Тимур Валерьевич
+    url: https://github.com/timur123-star
+  license:
+    name: MIT
+    url: https://opensource.org/license/mit/
+
+servers:
+  - url: http://localhost:3000
+    description: Локальная разработка
+  - url: https://ai-consultant-for-the-store.up.railway.app
+    description: Production на Railway
+
+tags:
+  - name: probes
+    description: Liveness/readiness — для оркестратора (Railway healthcheck, k8s).
+  - name: observability
+    description: Метрики для Prometheus/Grafana и JSON-снапшоты для людей.
+  - name: docs
+    description: Эта документация — рендерится через Swagger UI.
+
+paths:
+  /:
+    get:
+      summary: Friendly home
+      description: Текстовый ответ для health-чекеров и любопытных людей.
+      operationId: getHome
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: 'AI-консультант жив. Пиши боту в Telegram.'
+
+  /health:
+    get:
+      tags: [probes]
+      summary: Liveness probe
+      description: |
+        Всегда отвечает `200` пока Node-процесс жив. Не проверяет внешние
+        зависимости — для readiness используй `/ready`.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Процесс жив
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /ready:
+    get:
+      tags: [probes]
+      summary: Readiness probe
+      description: |
+        Проверяет, что Postgres и Redis отвечают. Возвращает `503` если что-то
+        недоступно — Railway/k8s по этому коду делает рестарт.
+      operationId: getReady
+      responses:
+        '200':
+          description: Готов принимать трафик
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          description: Не готов — Postgres или Redis не отвечают
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+
+  /metrics:
+    get:
+      tags: [observability]
+      summary: Prometheus метрики
+      description: |
+        Текстовый формат [Prometheus exposition](https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md).
+        Содержит counter-метрики (`messages_total`, `errors_total`, `rate_limited_total`,
+        `embedding_cache_hit_total` и т.п.) и summary с квантилями
+        `0.5/0.95/0.99` для latency (`message_ms`, `embedding_ms`, `rag_ms`,
+        `llm_ms`, `whisper_ms`).
+      operationId: getPrometheusMetrics
+      responses:
+        '200':
+          description: Прометей-метрики
+          content:
+            text/plain; version=0.0.4:
+              schema:
+                type: string
+              example: |
+                # HELP messages_total Total user messages handled
+                # TYPE messages_total counter
+                messages_total 42
+                # HELP message_ms Latency of message handler
+                # TYPE message_ms summary
+                message_ms{quantile="0.5"} 312
+                message_ms{quantile="0.95"} 890
+                message_ms{quantile="0.99"} 1450
+
+  /metrics.json:
+    get:
+      tags: [observability]
+      summary: JSON snapshot метрик
+      description: |
+        Машино- и человеко-читаемый JSON-снапшот тех же метрик что и `/metrics`.
+        Удобно дергать `curl | jq` или подключать к нестандартным дашбордам.
+      operationId: getJsonMetrics
+      responses:
+        '200':
+          description: JSON-метрики
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSnapshot'
+
+  /analytics:
+    get:
+      tags: [analytics]
+      summary: Human-readable analytics dashboard
+      description: |
+        Серверный HTML-дашборд по таблице `conversations`: тоталы за 24ч / 7д,
+        активность по дням, топ-запросов, топ-категорий, топ-SKU, per-variant
+        стата (A/B-фреймворк). Без JS-фреймворков и внешних запросов.
+      operationId: getAnalyticsDashboard
+      responses:
+        '200':
+          description: HTML дашборд
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /analytics.json:
+    get:
+      tags: [analytics]
+      summary: Снимок аналитики в JSON
+      description: |
+        Тот же набор данных что и `/analytics`, но в виде структурированного
+        JSON — удобно подключать к Grafana, Metabase или собственным дашбордам.
+      operationId: getAnalyticsSnapshot
+      responses:
+        '200':
+          description: JSON snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsSnapshot'
+
+  /docs:
+    get:
+      tags: [docs]
+      summary: Swagger UI
+      description: Интерактивная документация к этому API.
+      operationId: getSwaggerUi
+      responses:
+        '200':
+          description: HTML страница Swagger UI
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /docs/openapi.yaml:
+    get:
+      tags: [docs]
+      summary: Эта спецификация (raw)
+      description: OpenAPI 3.1 YAML-документ, на основе которого рендерится Swagger UI.
+      operationId: getOpenApiSpec
+      responses:
+        '200':
+          description: YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, uptime_seconds]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        uptime_seconds:
+          type: integer
+          minimum: 0
+          description: Сколько секунд процесс работает.
+        telemetry:
+          type: object
+          description: Какая телеметрия инициализирована (см. SENTRY_DSN / OTEL_EXPORTER_OTLP_ENDPOINT).
+          properties:
+            sentry:
+              type: boolean
+            otel:
+              type: boolean
+      example:
+        status: ok
+        uptime_seconds: 1234
+        telemetry:
+          sentry: false
+          otel: false
+
+    ReadyResponse:
+      type: object
+      required: [ready, postgres, redis]
+      properties:
+        ready:
+          type: boolean
+        postgres:
+          type: boolean
+        redis:
+          type: boolean
+        error:
+          type: string
+          description: Краткая причина, если ready=false.
+      example:
+        ready: true
+        postgres: true
+        redis: true
+
+    LatencySummary:
+      type: object
+      required: [count, p50, p95, p99]
+      properties:
+        count:
+          type: integer
+        p50:
+          type: number
+        p95:
+          type: number
+        p99:
+          type: number
+
+    MetricsSnapshot:
+      type: object
+      description: |
+        Точная форма snapshot'а из `src/metrics.ts`. Counters имеют тип `integer`,
+        latencies — `LatencySummary`. Имена метрик могут расширяться по мере роста
+        бота, но существующие никогда не переименовываются (только добавляются).
+      properties:
+        counters:
+          type: object
+          additionalProperties:
+            type: integer
+        latencies:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/LatencySummary'
+        started_at:
+          type: string
+          format: date-time
+      example:
+        counters:
+          messages_total: 42
+          errors_total: 1
+          rate_limited_total: 0
+          embedding_cache_hit_total: 30
+          embedding_cache_miss_total: 12
+        latencies:
+          message_ms:
+            count: 42
+            p50: 312
+            p95: 890
+            p99: 1450
+        started_at: '2026-05-12T00:00:00.000Z'
+
+    AnalyticsTotals:
+      type: object
+      required:
+        [
+          conversations_total,
+          conversations_24h,
+          conversations_7d,
+          unique_users_total,
+          unique_users_24h,
+          orders_total,
+          orders_24h,
+          orders_paid_total,
+          fallback_total,
+          fallback_rate,
+        ]
+      properties:
+        conversations_total: { type: integer }
+        conversations_24h: { type: integer }
+        conversations_7d: { type: integer }
+        unique_users_total: { type: integer }
+        unique_users_24h: { type: integer }
+        orders_total: { type: integer }
+        orders_24h: { type: integer }
+        orders_paid_total: { type: integer }
+        fallback_total: { type: integer }
+        fallback_rate:
+          type: number
+          description: Доля диалогов без матчей по каталогу (0..1).
+
+    DailyBucket:
+      type: object
+      required: [day, conversations, unique_users]
+      properties:
+        day: { type: string, format: date }
+        conversations: { type: integer }
+        unique_users: { type: integer }
+
+    TopQuery:
+      type: object
+      required: [user_text, count]
+      properties:
+        user_text: { type: string }
+        count: { type: integer }
+
+    VariantStats:
+      type: object
+      required: [variant, count, avg_user_text_length, avg_bot_text_length]
+      properties:
+        variant: { type: string }
+        count: { type: integer }
+        avg_user_text_length: { type: number }
+        avg_bot_text_length: { type: number }
+
+    TopCategory:
+      type: object
+      required: [category, matches]
+      properties:
+        category: { type: string }
+        matches: { type: integer }
+
+    AnalyticsSnapshot:
+      type: object
+      required:
+        [
+          generated_at,
+          totals,
+          daily,
+          top_queries_7d,
+          prompt_variants,
+          top_categories_7d,
+          top_skus_7d,
+        ]
+      properties:
+        generated_at: { type: string, format: date-time }
+        totals: { $ref: '#/components/schemas/AnalyticsTotals' }
+        daily:
+          type: array
+          items: { $ref: '#/components/schemas/DailyBucket' }
+        top_queries_7d:
+          type: array
+          items: { $ref: '#/components/schemas/TopQuery' }
+        prompt_variants:
+          type: array
+          items: { $ref: '#/components/schemas/VariantStats' }
+        top_categories_7d:
+          type: array
+          items: { $ref: '#/components/schemas/TopCategory' }
+        top_skus_7d:
+          type: array
+          items: { $ref: '#/components/schemas/TopQuery' }

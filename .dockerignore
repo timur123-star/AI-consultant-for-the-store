@@ -1,0 +1,13 @@
+node_modules
+.git
+.cache
+.env
+.env.*
+*.log
+npm-debug.log*
+.DS_Store
+dist
+.idea
+.vscode
+screenshots
+test-rag.mjs
