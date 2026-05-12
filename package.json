@@ -42,7 +42,7 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^22.10.0",
+    "@types/node": "^25.7.0",
     "@types/pg": "^8.11.10",
     "@types/swagger-ui-dist": "^3.30.6",
     "@vitest/coverage-v8": "^4.1.6",
