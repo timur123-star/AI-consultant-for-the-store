@@ -30,7 +30,7 @@
     "@opentelemetry/auto-instrumentations-node": "^0.76.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.218.0",
     "@opentelemetry/sdk-node": "^0.218.0",
-    "@sentry/node": "^10.55.0",
+    "@sentry/node": "^10.56.0",
     "dotenv": "^17.4.2",
     "groq-sdk": "^1.2.1",
     "pg": "^8.21.0",
